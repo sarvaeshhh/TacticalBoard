@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Stage, Layer, Transformer, Line, Arrow, Group } from 'react-konva';
 import Konva from 'konva';
-import { MousePointer2, Pen, Move, RotateCcw, Eraser, Undo2, Redo2, Camera, Download } from 'lucide-react';
+import { MousePointer2, Pen, Move, RotateCcw, Eraser, Undo2, Redo2 } from 'lucide-react';
 import { Pitch } from './components/Pitch';
 import { PlayerNode } from './components/PlayerNode';
 import { TrashZone } from './components/TrashZone';
@@ -41,13 +41,26 @@ const App: React.FC = () => {
   const isDrawing = useRef(false);
   const currentLineId = useRef<string | null>(null);
 
-  // --- Responsive Logic ---
+  // --- Orientation Lock and Responsive Logic ---
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
         setContainerSize({
           width: containerRef.current.offsetWidth,
           height: containerRef.current.offsetHeight
+        });
+      }
+
+      // Check if we're in portrait and lock to landscape if possible
+      if (window.innerWidth < window.innerHeight && window.screen && window.screen.orientation) {
+        // Attempt to lock to landscape if currently in portrait
+        window.screen.orientation.lock('landscape').catch(() => {
+          // If landscape lock fails, try alternatives
+          window.screen.orientation.lock('landscape-primary').catch(() => {
+            window.screen.orientation.lock('landscape-secondary').catch(() => {
+              console.warn('Screen orientation lock not supported or permission denied');
+            });
+          });
         });
       }
     };
@@ -84,59 +97,19 @@ const App: React.FC = () => {
     setHistoryStep(nextStep);
   };
 
-  const handleExport = () => {
-    if (!stageRef.current) {
-      console.error('Stage reference is missing');
-      alert('Error: Board not ready for export.');
-      return;
-    }
-
-    try {
-      const uri = stageRef.current.toDataURL({ pixelRatio: 2 });
-      const link = document.createElement('a');
-      const filename = `tactical-board-${new Date().toISOString().slice(0, 10)}-${Date.now()}.png`;
-      link.download = filename;
-      link.href = uri;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      // Show user feedback about the download
-      if (Notification.permission === 'granted') {
-        new Notification('Download Complete', {
-          body: `Your tactical board has been saved as "${filename}"`,
-          icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="10" fill="green"/><path fill="white" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>'
-        });
-      } else if (Notification.permission !== 'denied') {
-        Notification.requestPermission().then(permission => {
-          if (permission === 'granted') {
-            new Notification('Download Complete', {
-              body: `Your tactical board has been saved as "${filename}"`,
-              icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="10" fill="green"/><path fill="white" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>'
-            });
-          }
-        });
-      }
-
-      // Fallback feedback for browsers that don't support notifications
-      alert(`Exported as ${filename}\n\nCheck your browser's downloads folder.`);
-      console.log('Export successful:', filename);
-    } catch (err) {
-      console.error('Export failed:', err);
-      alert('Failed to export image. See console for details.');
-    }
-  };
 
   // Calculate Scale Factor to fit the VIRTUAL board into the CONTAINER
-  // We want 'contain' behavior (show whole pitch)
+  // We want 'contain' behavior (show whole pitch) with padding for mobile
   const scale = Math.min(
     containerSize.width / VIRTUAL_WIDTH,
     containerSize.height / VIRTUAL_HEIGHT
-  ) || 0.1; // Fallback to avoid division by zero issues
+  ) * 0.95; // Small padding to ensure full visibility
+  // Fallback to avoid division by zero issues
+  const safeScale = scale || 0.1;
 
   // Center the board
-  const boardX = (containerSize.width - VIRTUAL_WIDTH * scale) / 2;
-  const boardY = (containerSize.height - VIRTUAL_HEIGHT * scale) / 2;
+  const boardX = Math.max(0, (containerSize.width - VIRTUAL_WIDTH * safeScale) / 2);
+  const boardY = Math.max(0, (containerSize.height - VIRTUAL_HEIGHT * safeScale) / 2);
 
   // --- Helpers ---
   const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -146,8 +119,8 @@ const App: React.FC = () => {
     const pointer = stage.getPointerPosition();
     if (!pointer) return null;
     return {
-      x: (pointer.x - boardX) / scale,
-      y: (pointer.y - boardY) / scale
+      x: (pointer.x - boardX) / safeScale,
+      y: (pointer.y - boardY) / safeScale
     };
   };
 
@@ -313,7 +286,7 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-full bg-slate-900">
       {/* --- Floating Top Bar --- */}
-      <div className="absolute top-4 md:top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 md:gap-3 px-2 py-1.5 md:py-2 bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl shadow-black/50 transition-all duration-300 hover:border-slate-600 max-w-[95vw] overflow-x-auto no-scrollbar">
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 md:gap-3 px-2 py-1 md:py-2 bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl shadow-black/50 max-w-[95vw] overflow-x-auto no-scrollbar">
 
         {/* Logo / Brand */}
         <div className="flex items-center justify-center p-2 mr-1 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-inner group">
@@ -396,16 +369,6 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          {/* Export */}
-          <button
-            onClick={handleExport}
-            className="p-2.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-xl transition-all duration-200 group relative overflow-hidden mr-1"
-            title="Save Image"
-          >
-            <Camera size={20} className="relative z-10 transition-transform duration-300 group-hover:scale-110" />
-          </button>
-
-          <div className="w-px h-6 bg-slate-700/50 mx-1"></div>
 
           <button
             onClick={() => setDrawings([])}
@@ -431,19 +394,19 @@ const App: React.FC = () => {
       <div className="flex-1 flex overflow-hidden relative">
 
         {/* Floating Sidebar for Players */}
-        <div className="absolute left-2 top-20 z-40 flex flex-col space-y-2 bg-slate-900/90 backdrop-blur-xl p-2 rounded-xl border border-slate-700/50 shadow-2xl shadow-black/50 md:top-1/2 md:-translate-y-1/2">
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 z-40 flex flex-col space-y-3 bg-slate-900/90 backdrop-blur-xl p-3 rounded-2xl border border-slate-700/50 shadow-2xl shadow-black/50">
           {/* Section Label */}
-          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center px-1">Players</div>
+          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center px-2">Players</div>
 
           {/* Home Player Button */}
           <div className="relative group">
             <button
               onClick={() => addItem(ItemType.HOME_PLAYER)}
-              className="w-12 h-12 rounded-full bg-gradient-to-br from-red-400 to-red-600 hover:from-red-300 hover:to-red-500 shadow-lg shadow-red-500/30 flex items-center justify-center border-2 border-red-300/30 relative transition-all duration-200 hover:scale-110 active:scale-95 hover:shadow-red-500/50"
+              className="w-16 h-16 rounded-full bg-[#ef4444] hover:bg-[#f87171] shadow-lg flex items-center justify-center border-2 border-white/30 relative transition-all duration-200 hover:scale-105 active:scale-95 hover:shadow-red-500/60"
             >
-              <span className="font-bold text-white text-base drop-shadow-md">{homeCount}</span>
-              <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 shadow-md">
-                <svg className="w-2.5 h-2.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <span className="font-bold text-white text-xl drop-shadow-md">{homeCount}</span>
+              <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-md">
+                <svg className="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
               </div>
@@ -457,11 +420,11 @@ const App: React.FC = () => {
           <div className="relative group">
             <button
               onClick={() => addItem(ItemType.AWAY_PLAYER)}
-              className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 hover:from-blue-300 hover:to-blue-500 shadow-lg shadow-blue-500/30 flex items-center justify-center border-2 border-blue-300/30 relative transition-all duration-200 hover:scale-110 active:scale-95 hover:shadow-blue-500/50"
+              className="w-16 h-16 rounded-full bg-[#3b82f6] hover:bg-[#60a5fa] shadow-lg flex items-center justify-center border-2 border-white/30 relative transition-all duration-200 hover:scale-105 active:scale-95 hover:shadow-blue-500/60"
             >
-              <span className="font-bold text-white text-base drop-shadow-md">{awayCount}</span>
-              <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 shadow-md">
-                <svg className="w-2.5 h-2.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <span className="font-bold text-white text-xl drop-shadow-md">{awayCount}</span>
+              <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-md">
+                <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
               </div>
@@ -472,27 +435,20 @@ const App: React.FC = () => {
           </div>
 
           {/* Divider */}
-          <div className="h-px bg-gradient-to-r from-transparent via-slate-500/50 to-transparent"></div>
+          <div className="h-px bg-gradient-to-r from-transparent via-slate-500/50 to-transparent my-1"></div>
 
           {/* Ball Button */}
           <div className="relative group">
             <button
               onClick={() => addItem(ItemType.BALL)}
-              className="w-12 h-12 rounded-full bg-gradient-to-br from-white to-slate-200 hover:from-white hover:to-slate-100 shadow-lg flex items-center justify-center border-2 border-slate-300/50 relative transition-all duration-200 hover:scale-110 active:scale-95 hover:shadow-xl"
+              className="w-16 h-16 rounded-full bg-white hover:bg-slate-100 shadow-lg flex items-center justify-center border-2 border-slate-900 relative transition-all duration-200 hover:scale-105 active:scale-95 hover:shadow-xl"
             >
-              {/* Soccer Ball SVG Icon */}
-              <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" fill="white" stroke="#1e293b" strokeWidth="1.5" />
-                {/* Pentagon pattern */}
-                <path d="M12 2.5L12 6M12 18L12 21.5M2.5 12L6 12M18 12L21.5 12" stroke="#334155" strokeWidth="0.5" />
-                <path d="M12 7L14.5 9L13.5 12L10.5 12L9.5 9L12 7Z" fill="#1e293b" />
-                <path d="M7 11L9 9L9 12L7 14L5 12L7 11Z" fill="#1e293b" />
-                <path d="M17 11L19 12L17 14L15 12L15 9L17 11Z" fill="#1e293b" />
-                <path d="M9 15L10.5 12L13.5 12L15 15L12 17L9 15Z" fill="#1e293b" />
-                <circle cx="12" cy="12" r="10" fill="none" stroke="#94a3b8" strokeWidth="0.5" />
-              </svg>
-              <div className="absolute -bottom-0.5 -right-0.5 bg-emerald-500 rounded-full p-0.5 shadow-md">
-                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              {/* Ball with exact same appearance as on pitch */}
+              <div className="w-11 h-11 rounded-full border-[3px] border-black relative">
+                <div className="absolute inset-0 bg-white"></div>
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-emerald-500 rounded-full p-1 shadow-md">
+                <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
               </div>
@@ -525,8 +481,8 @@ const App: React.FC = () => {
               <Group
                 x={boardX}
                 y={boardY}
-                scaleX={scale}
-                scaleY={scale}
+                scaleX={safeScale}
+                scaleY={safeScale}
               >
                 {/* Background used for click detection */}
                 <Pitch width={VIRTUAL_WIDTH} height={VIRTUAL_HEIGHT} />
