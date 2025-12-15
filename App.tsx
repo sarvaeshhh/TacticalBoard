@@ -6,6 +6,7 @@ import { Pitch } from './components/Pitch';
 import { PlayerNode } from './components/PlayerNode';
 import { TrashZone } from './components/TrashZone';
 import { BoardItem, ItemType, ToolMode, Drawing } from './types';
+import './global.css';
 
 // Virtual Board Resolution (Logic coordinates)
 // Standard Pitch Ratio approx 105:68. We use a high resolution for clarity.
